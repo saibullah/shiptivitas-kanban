@@ -7,20 +7,151 @@ import './Board.css';
 export default class Board extends React.Component {
   constructor(props) {
     super(props);
-    const clients = this.getClients();
+
+    const savedClients = localStorage.getItem('shiptivitas-clients');
+
+    const clients = savedClients
+      ? JSON.parse(savedClients)
+      : this.getClients();
+
     this.state = {
       clients: {
-        backlog: clients.filter(client => !client.status || client.status === 'backlog'),
-        inProgress: clients.filter(client => client.status && client.status === 'in-progress'),
-        complete: clients.filter(client => client.status && client.status === 'complete'),
-      }
-    }
+        backlog: clients.filter(
+          client => !client.status || client.status === 'backlog'
+        ),
+        inProgress: clients.filter(
+          client => client.status === 'in-progress'
+        ),
+        complete: clients.filter(
+          client => client.status === 'complete'
+        ),
+      },
+    };
+
     this.swimlanes = {
       backlog: React.createRef(),
       inProgress: React.createRef(),
       complete: React.createRef(),
+    };
+
+    this.originalSource = null;
+    this.originalNextSibling = null;
+  }
+
+  componentDidMount() {
+    this.drake = Dragula([
+      this.swimlanes.backlog.current,
+      this.swimlanes.inProgress.current,
+      this.swimlanes.complete.current,
+    ]);
+
+    this.drake.on('drag', (el, source) => {
+      this.originalSource = source;
+      this.originalNextSibling = el.nextSibling;
+    });
+
+    this.drake.on('drop', (el, target, source, sibling) => {
+      const id = el.dataset.id;
+
+      let newStatus;
+
+      if (target === this.swimlanes.backlog.current) {
+        newStatus = 'backlog';
+      } else if (target === this.swimlanes.inProgress.current) {
+        newStatus = 'in-progress';
+      } else {
+        newStatus = 'complete';
+      }
+
+      // Find the position where the card was dropped
+      const targetIndex = sibling
+        ? Array.from(target.children).indexOf(sibling)
+        : target.children.length - 1;
+
+      // Restore DOM so React can safely update it
+      if (
+        this.originalNextSibling &&
+        this.originalNextSibling.parentNode === this.originalSource
+      ) {
+        this.originalSource.insertBefore(
+          el,
+          this.originalNextSibling
+        );
+      } else {
+        this.originalSource.appendChild(el);
+      }
+
+      this.setState(prevState => {
+        const allClients = [
+          ...prevState.clients.backlog,
+          ...prevState.clients.inProgress,
+          ...prevState.clients.complete,
+        ];
+
+        const movedClient = allClients.find(
+          client => client.id === id
+        );
+
+        const remainingClients = allClients.filter(
+          client => client.id !== id
+        );
+
+        const updatedClient = {
+          ...movedClient,
+          status: newStatus,
+        };
+
+        const targetClients = remainingClients.filter(
+          client => client.status === newStatus
+        );
+
+        targetClients.splice(targetIndex, 0, updatedClient);
+
+        return {
+          clients: {
+            backlog:
+              newStatus === 'backlog'
+                ? targetClients
+                : remainingClients.filter(
+                    client => client.status === 'backlog'
+                  ),
+
+            inProgress:
+              newStatus === 'in-progress'
+                ? targetClients
+                : remainingClients.filter(
+                    client => client.status === 'in-progress'
+                  ),
+
+            complete:
+              newStatus === 'complete'
+                ? targetClients
+                : remainingClients.filter(
+                    client => client.status === 'complete'
+                  ),
+          },
+        };
+      }, () => {
+        const allClients = [
+          ...this.state.clients.backlog,
+          ...this.state.clients.inProgress,
+          ...this.state.clients.complete,
+        ];
+
+        localStorage.setItem(
+          'shiptivitas-clients',
+          JSON.stringify(allClients)
+        );
+      });
+    });
+  }
+
+  componentWillUnmount() {
+    if (this.drake) {
+      this.drake.destroy();
     }
   }
+
   getClients() {
     return [
       ['1','Stark, White and Abbott','Cloned Optimal Architecture', 'in-progress'],
@@ -50,9 +181,14 @@ export default class Board extends React.Component {
       status: companyDetails[3],
     }));
   }
+
   renderSwimlane(name, clients, ref) {
     return (
-      <Swimlane name={name} clients={clients} dragulaRef={ref}/>
+      <Swimlane
+        name={name}
+        clients={clients}
+        dragulaRef={ref}
+      />
     );
   }
 
@@ -61,15 +197,31 @@ export default class Board extends React.Component {
       <div className="Board">
         <div className="container-fluid">
           <div className="row">
+
             <div className="col-md-4">
-              {this.renderSwimlane('Backlog', this.state.clients.backlog, this.swimlanes.backlog)}
+              {this.renderSwimlane(
+                'Backlog',
+                this.state.clients.backlog,
+                this.swimlanes.backlog
+              )}
             </div>
+
             <div className="col-md-4">
-              {this.renderSwimlane('In Progress', this.state.clients.inProgress, this.swimlanes.inProgress)}
+              {this.renderSwimlane(
+                'In Progress',
+                this.state.clients.inProgress,
+                this.swimlanes.inProgress
+              )}
             </div>
+
             <div className="col-md-4">
-              {this.renderSwimlane('Complete', this.state.clients.complete, this.swimlanes.complete)}
+              {this.renderSwimlane(
+                'Complete',
+                this.state.clients.complete,
+                this.swimlanes.complete
+              )}
             </div>
+
           </div>
         </div>
       </div>
